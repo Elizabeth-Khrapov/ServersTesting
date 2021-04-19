@@ -1,74 +1,81 @@
 package com.server.serverTest;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
+
 
 import java.util.List;
 
 import javax.annotation.PostConstruct;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 @SpringBootTest
+@EnableConfigurationProperties
+@ActiveProfiles("test")
+@RequiredArgsConstructor(onConstructor = @__(@Autowired)) //creates default constructor checks that all required values are not null 
 class ServerTestApplicationTests {
-
-	private RestTemplate restTemplate;
+	@NonNull
+	private TestConfigurator testConfigurator;
+	private RestTemplate restTemplate; //
 	private List<ServerData> serversData;
-	private final int REQUEST_NUMBER = 50;
-	
+
+	//gets test environment from configuration
 	@PostConstruct
 	public void init() {
 		restTemplate = new RestTemplate();
-		TestConfigurator testConfigurator = new TestConfigurator();
-		serversData = testConfigurator.getTestConfigurator();
+		serversData = testConfigurator.getTestConfiguration();
 	}
+
+	//communication test 
 	@Test
 	void getPingFromAllServers() {
 		ServerEntity response;
-		for(int i=0;i<serversData.size();i++) {
-			response = restTemplate.getForObject(serversData.get(i).getPath(),ServerEntity.class);
-			assertEquals( response.isSuccess(),true);
+		for (ServerData sd : serversData) {
+			response = restTemplate.getForObject(sd.getPath(), ServerEntity.class);
+			assertThat(response.isSuccess()).isEqualTo(true);
 		}
-		
 	}
-	
+
+	//verifies that the response matches the desired values
 	@Test
 	void checkAllFields() {
 		ServerEntity response;
-		for(int i=0;i<serversData.size();i++) {
-			response = restTemplate.getForObject(serversData.get(i).getPath(),ServerEntity.class);
-			assertEquals( response.getSaEndpoint(),serversData.get(i).getEntity().getSaEndpoint());
-			assertEquals( response.getVersion(),serversData.get(i).getEntity().getVersion());
-			assertEquals( response.getSfVersion(),serversData.get(i).getEntity().getSfVersion());
-			assertEquals( response.getHost(),serversData.get(i).getEntity().getHost());
-			assertEquals( response.isNewPackage(),serversData.get(i).getEntity().isNewPackage());
+		for (ServerData sd : serversData) {
+			response = restTemplate.getForObject(sd.getPath(), ServerEntity.class);
+			assertThat(response).isEqualTo(sd.getEntity());
+		}
 	}
-	
-	}
+
+	//makes sure that the servers support security level verification
 	@Test
 	void postNotValid() {
 		HttpStatus response = null;
-		for(int i=0;i<serversData.size();i++) {
-		try {
-			this.restTemplate.postForObject(serversData.get(i).getPath(), serversData.get(i).getEntity(), ServerEntity.class);
-		} catch (HttpStatusCodeException ex) {
-			response = ex.getStatusCode();
+		for (ServerData sd : serversData) {
+			try {
+				this.restTemplate.postForObject(sd.getPath(), sd.getEntity(),
+						ServerEntity.class);
+			} catch (HttpStatusCodeException ex) {
+				response = ex.getStatusCode();
+			}
+			assertThat(response).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
 		}
-		assertEquals(response, HttpStatus.METHOD_NOT_ALLOWED);	
 	}
-	}
+
+	//checks the performance of multiple http requests
 	@Test
 	void checkPerformence() {
-		ServerEntity response;
-		for(int j=0;j<REQUEST_NUMBER;j++) {
-		for(int i=0;i<serversData.size();i++) {
-			response = restTemplate.getForObject(serversData.get(i).getPath(),ServerEntity.class);
-			assertEquals( response.isSuccess(),true);
+		for (int j = 0; j < testConfigurator.getRequestloadtest(); j++) {
+			getPingFromAllServers();
 		}
-		}
-		}
+	}
 }
